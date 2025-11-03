@@ -1,6 +1,7 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 name: pvcviewer-operator
+charm-user: _daemon_
 summary: |
   A charm which provides a Kubernetes installation of the PVCViewer (https://github.com/kubeflow/kubeflow/tree/master/components/pvcviewer-controller).
 description: |
