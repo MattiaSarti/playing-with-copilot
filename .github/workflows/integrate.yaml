@@ -1,0 +1,101 @@
+# reusable workflow triggered by other actions
+name: CI
+
+on:
+  workflow_call:
+    secrets:
+      CHARMCRAFT_CREDENTIALS:
+        required: true
+
+jobs:
+  lib-check:
+    name: Check libraries
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check libs
+        uses: canonical/charming-actions/check-libraries@2.3.0
+        with:
+          credentials: "${{ secrets.CHARMCRAFT_CREDENTIALS }}"
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+  lint:
+    name: Lint Check
+    runs-on: ubuntu-24.04
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: pipx install tox
+
+    - name: Lint code
+      run: tox -e lint
+
+  unit:
+    name: Unit Test
+    runs-on: ubuntu-24.04
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: pipx install tox
+
+    - name: Run unit tests
+      run: tox -e unit
+
+  terraform-checks:
+    name: Terraform
+    uses: canonical/charmed-kubeflow-workflows/.github/workflows/terraform-checks.yaml@main
+    with:
+      charm-path: .
+
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Maximise GH runner space
+      uses: easimon/maximize-build-space@v7
+      with:
+        root-reserve-mb: 29696
+        remove-dotnet: 'true'
+        remove-haskell: 'true'
+        remove-android: 'true'
+        remove-codeql: 'true'
+        remove-docker-images: 'true'
+    - uses: actions/checkout@v4
+    - name: Install dependencies
+      run: pipx install tox
+
+    - name: Setup environment
+      run: |
+        sudo apt-get remove -y docker-ce docker-ce-cli containerd.io
+        sudo rm -rf /run/containerd
+        sudo snap install concierge --classic
+        sudo concierge prepare --trace
+    - name: Run integration tests
+      # Running with kubeflow model because of upstream issue https://github.com/kubeflow/kubeflow/issues/7283
+      run: tox -vve integration -- --model kubeflow
+
+    # On failure, capture debugging resources      
+    - name: Get all
+      run: kubectl get all -A
+      if: failure()
+
+    - name: Get juju status
+      run: juju status
+      if: failure()
+
+    - name: Get workload logs
+      run: kubectl logs --tail 100 -ntesting -lapp.kubernetes.io/name=mlflow-server
+      if: failure()
+
+    - name: Get operator logs
+      run: kubectl logs --tail 100 -ntesting -loperator.juju.is/name=mlflow-server
+      if: failure()
